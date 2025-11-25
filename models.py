@@ -118,3 +118,34 @@ class StorageStatsResponse(BaseModel):
     storageSizeBytes: int
     storageSizeMB: str
     surveys: List[Dict[str, Any]]
+
+# Survey Response Models (for storing user answers)
+
+class UserSurveyResponse(BaseModel):
+    responseId: str  # Unique response ID
+    surveyId: str  # Which survey this is a response to
+    versionId: str  # Which version of the survey
+    respondentInfo: Optional[Dict[str, Any]] = None  # Optional respondent metadata
+    answers: Dict[str, Any]  # questionId -> answer mapping
+    submittedAt: datetime
+    completionTime: Optional[int] = None  # Time taken in seconds
+
+class UserSurveyResponseInDB(UserSurveyResponse):
+    id: Optional[str] = Field(None, alias="_id")
+
+class SubmitSurveyResponseRequest(BaseModel):
+    surveyId: str
+    versionId: str
+    respondentInfo: Optional[Dict[str, Any]] = None
+    answers: Dict[str, Any]
+    completionTime: Optional[int] = None
+
+class SubmitSurveyResponseResult(BaseModel):
+    success: bool
+    responseId: str
+    message: Optional[str] = None
+
+class SurveyResponsesListResponse(BaseModel):
+    success: bool
+    responses: List[UserSurveyResponse]
+    total: int

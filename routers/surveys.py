@@ -12,7 +12,11 @@ from models import (
     SurveysListResponse,
     StorageStatsResponse,
     StoredVersion,
-    SurveyConfig
+    SurveyConfig,
+    UserSurveyResponse,
+    SubmitSurveyResponseRequest,
+    SubmitSurveyResponseResult,
+    SurveyResponsesListResponse
 )
 from database import get_database
 
@@ -416,4 +420,89 @@ async def export_survey(survey_id: str):
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to export survey: {str(e)}"
+        )
+
+@router.post("/responses/", response_model=SubmitSurveyResponseResult)
+async def submit_survey_response(request: SubmitSurveyResponseRequest):
+    """
+    Submit a survey response
+    Stores user answers to survey questions
+    """
+    try:
+        from database import get_database
+        from datetime import datetime
+        
+        db = await get_database()
+        responses_collection = db["responses"]
+        
+        # Verify survey exists
+        surveys_collection = db["surveys"]
+        survey_doc = await surveys_collection.find_one({"surveyId": request.surveyId})
+        
+        if not survey_doc:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Survey {request.surveyId} not found"
+            )
+        
+        # Create response document
+        import uuid
+        response_id = str(uuid.uuid4())
+        
+        response_doc = {
+            "responseId": response_id,
+            "surveyId": request.surveyId,
+            "versionId": request.versionId,
+            "respondentInfo": request.respondentInfo,
+            "answers": request.answers,
+            "submittedAt": datetime.utcnow(),
+            "completionTime": request.completionTime
+        }
+        
+        await responses_collection.insert_one(response_doc)
+        
+        return SubmitSurveyResponseResult(
+            success=True,
+            responseId=response_id,
+            message="Survey response submitted successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to submit survey response: {str(e)}"
+        )
+
+@router.get("/responses/{survey_id}", response_model=SurveyResponsesListResponse)
+async def get_survey_responses(survey_id: str):
+    """
+    Get all responses for a specific survey
+    Returns list of user submissions
+    """
+    try:
+        from database import get_database
+        
+        db = await get_database()
+        responses_collection = db["responses"]
+        
+        # Get all responses for this survey
+        response_docs = await responses_collection.find(
+            {"surveyId": survey_id},
+            {"_id": 0}
+        ).to_list(length=None)
+        
+        responses = [UserSurveyResponse(**doc) for doc in response_docs]
+        
+        return SurveyResponsesListResponse(
+            success=True,
+            responses=responses,
+            count=len(responses)
+        )
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get survey responses: {str(e)}"
         )
