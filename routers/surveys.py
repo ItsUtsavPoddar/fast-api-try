@@ -506,3 +506,76 @@ async def get_survey_responses(survey_id: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get survey responses: {str(e)}"
         )
+
+@router.post("/analyze-historical")
+async def analyze_historical_surveys(survey_ids: str):
+    """
+    Fetch multiple surveys with their responses for AI analysis
+    survey_ids: comma-separated survey IDs (e.g., "1234,5678,9012")
+    Returns survey configs and all responses for AI to analyze
+    """
+    try:
+        from database import get_database
+        
+        # Parse and validate survey IDs
+        id_list = [sid.strip() for sid in survey_ids.split(",") if sid.strip()]
+        
+        if len(id_list) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No survey IDs provided"
+            )
+        
+        if len(id_list) > 5:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Maximum 5 surveys allowed for analysis"
+            )
+        
+        db = await get_database()
+        surveys_collection = db["surveys"]
+        responses_collection = db["responses"]
+        
+        result = []
+        
+        for survey_id in id_list:
+            # Fetch survey
+            survey_doc = await surveys_collection.find_one(
+                {"surveyId": survey_id},
+                {"_id": 0}
+            )
+            
+            if not survey_doc:
+                # Skip missing surveys instead of failing
+                continue
+            
+            # Fetch all responses for this survey
+            response_docs = await responses_collection.find(
+                {"surveyId": survey_id},
+                {"_id": 0}
+            ).to_list(length=None)
+            
+            result.append({
+                "survey": StoredSurvey(**survey_doc),
+                "responses": [UserSurveyResponse(**doc) for doc in response_docs]
+            })
+        
+        if len(result) == 0:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="None of the provided survey IDs were found"
+            )
+        
+        return {
+            "success": True,
+            "data": result,
+            "count": len(result)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to fetch historical surveys: {str(e)}"
+        )
